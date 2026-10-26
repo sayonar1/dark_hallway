@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Тёмный коридор</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:Arial,sans-serif;color:#ccc;touch-action:none;user-select:none}
+canvas{width:100vw;height:100vh;object-fit:contain;image-rendering:pixelated;display:block}
+#ov{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(#0003,#000e 85%);text-align:center;padding:20px;font-family:Georgia,'Times New Roman',serif}
+#ov h1{color:#a00;font-size:clamp(34px,8vw,84px);letter-spacing:.12em;margin:0 0 14px;text-shadow:0 0 18px #600;animation:fl 4s infinite}
+@keyframes fl{0%,91%,95%,100%{opacity:1}92%{opacity:.15}93%{opacity:1}94%{opacity:.4}}
+#ov p{white-space:pre-line;max-width:440px;color:#777;font-size:15px;margin:4px 0;font-style:italic}
+#ov button{all:unset;margin-top:28px;font-size:28px;letter-spacing:.25em;color:#bbb;cursor:pointer;padding:6px 18px;text-transform:uppercase}
+#ov button:hover{color:#f33;text-shadow:0 0 12px #a00}
+#ov button:hover::before{content:'› '}
+#warn{position:fixed;inset:0;z-index:9;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;font-family:Georgia,serif;cursor:pointer;animation:fi 2.5s}
+#warn h2{color:#b00;font-size:clamp(28px,6vw,56px);letter-spacing:.15em;margin:0 0 20px}
+#warn p{color:#aaa;max-width:540px;line-height:1.6;font-size:18px;margin:8px 0}
+#warn span{margin-top:30px;color:#666;font-size:14px;letter-spacing:.2em;animation:bl 1.6s infinite}
+@keyframes fi{from{opacity:0}to{opacity:1}}@keyframes bl{50%{opacity:.2}}
+#rot{position:fixed;inset:0;z-index:20;background:#000;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;font-family:Georgia,serif;color:#ccc}
+#rot .ic{font-size:80px;animation:rt 2s infinite}
+#rot p{font-size:22px;margin:16px 24px;letter-spacing:.05em}
+@keyframes rt{0%,30%{transform:rotate(0)}70%,100%{transform:rotate(-90deg)}}
+@media (orientation:portrait){body.touch #rot{display:flex}}
+.b{position:fixed;bottom:14px;width:64px;height:64px;border-radius:50%;background:#fff2;border:2px solid #fff4;color:#fff;font-size:26px;display:none;align-items:center;justify-content:center}
+.touch .b{display:flex}
+#bf{left:78px;bottom:150px}#bl{left:14px;bottom:82px}#br{left:142px;bottom:82px}#bd{left:78px;bottom:14px}#bs{right:24px;bottom:34px;width:92px;height:92px;background:#ff02;font-size:38px}
+</style></head><body>
+<canvas id="c"></canvas>
+<div class="b" id="bl">◀</div><div class="b" id="bf">▲</div><div class="b" id="br">▶</div><div class="b" id="bd">▼</div><div class="b" id="bs">💡</div>
+<div id="rot"><div class="ic">📱</div><p>Поверни телефон горизонтально,<br>чтобы играть</p></div>
+<div id="warn"><h2>⚠ ВНИМАНИЕ</h2><p>В игре есть резкие звуки, скримеры и мигающий свет.<br>Не рекомендуется людям с эпилепсией или чувствительностью к вспышкам, а также слабонервным.</p><p>Играй в наушниках в тёмной комнате.<br>Станет страшно — просто закрой игру.</p><span>НАЖМИ, ЧТОБЫ ПРОДОЛЖИТЬ</span></div>
+<div id="ov"><h1>ТЁМНЫЙ КОРИДОР</h1>
+<p>Тёмный отель, 3 этаж. Найди в номерах ключ, открой лестницу вниз и выберись на улицу.</p>
+<p>Монстры идут на звук шагов. Стоишь на месте — тебя не тронут.</p>
+<p>Увидел монстра — замри! Любое движение — смерть.</p>
+<p>Не спамь вспышкой — лампа перегреется.</p>
+<p>WASD — идти · Мышь — смотреть · ЛКМ или Пробел — вспышка</p>
+<button id="go">Играть</button></div>
+<script>
+const cv=document.getElementById('c'),g=cv.getContext('2d'),W=cv.width=480,H=cv.height=270;
+const ov=document.getElementById('ov'),go=document.getElementById('go');
+if('ontouchstart' in window||matchMedia('(pointer:coarse)').matches)document.body.classList.add('touch');
+let keys={},state='menu',level=1,map,N,px,py,pa,mons=[],ex,ey,light=0,cd=0,jam=0,freeze=0,grace=0,msg='',msgT=0,pd,time=0,last=0;
+const zb=new Float32Array(W),img=g.createImageData(W,H),D=img.data;let scareT=0,scareWhy=[],playTime=0,lit,keyObj,hasKey;
+// Yandex Games SDK
+let ysdk=null;
+try{const s=document.createElement('script');s.src='/sdk.js';
+s.onload=()=>YaGames.init().then(y=>{ysdk=y;try{y.features.LoadingAPI&&y.features.LoadingAPI.ready()}catch(e){}}).catch(()=>{});
+document.head.appendChild(s)}catch(e){}
+function gp(f){try{ysdk&&ysdk.features.GameplayAPI&&ysdk.features.GameplayAPI[f]()}catch(e){}}
+// audio
+let ac;function beep(f,d,type){try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();const o=ac.createOscillator(),v=ac.createGain();o.type=type||'sawtooth';o.frequency.value=f;v.gain.value=.12;v.gain.exponentialRampToValueAtTime(.001,ac.currentTime+d);o.connect(v);v.connect(ac.destination);o.start();o.stop(ac.currentTime+d)}catch(e){}}
+// maze
+function gen(n){N=2*n+1;lit=new Uint8Array(N*N);map=Array.from({length:N},()=>Array(N).fill(1));const st=[[1,1]];map[1][1]=0;
+while(st.length){const[x,y]=st[st.length-1];const d=[[2,0],[-2,0],[0,2],[0,-2]].filter(([a,b])=>{const X=x+a,Y=y+b;return X>0&&Y>0&&X<N-1&&Y<N-1&&map[Y][X]==1});
+if(!d.length){st.pop();continue}const[a,b]=d[Math.random()*d.length|0];map[y+b/2][x+a/2]=0;map[y+b][x+a]=0;st.push([x+a,y+b])}
+for(let i=0;i<n*2;i++){const x=1+(Math.random()*(N-2)|0),y=1+(Math.random()*(N-2)|0);if(map[y][x]&&(x%2)!=(y%2))map[y][x]=0}}
+function placeRooms(){const de=[];for(let y=1;y<N;y+=2)for(let x=1;x<N;x+=2){if((x==1&&y==1)||(x==N-2&&y==N-2))continue;const o=[];for(const[a,b]of[[1,0],[-1,0],[0,1],[0,-1]])if(!map[y+b][x+a])o.push([x+a,y+b]);if(o.length==1)de.push([x,y,o[0]])}
+de.sort(()=>Math.random()-.5);const rooms=de.slice(0,8);for(const r of rooms)map[r[2][1]][r[2][0]]=2;
+const k=rooms[0]||[N-2,1];keyObj={key:1,x:k[0]+.5,y:k[1]+.5};hasKey=false}
+function bfs(sx,sy){const d=Array.from({length:N},()=>Array(N).fill(-1));d[sy][sx]=0;const q=[[sx,sy]];
+for(let i=0;i<q.length;i++){const[x,y]=q[i];for(const[a,b]of[[1,0],[-1,0],[0,1],[0,-1]]){const X=x+a,Y=y+b;if(!map[Y][X]&&d[Y][X]<0){d[Y][X]=d[y][x]+1;q.push([X,Y])}}}return d}
+function farCell(d,min){const c=[];for(let y=0;y<N;y++)for(let x=0;x<N;x++)if(d[y][x]>=min)c.push([x,y]);return c[Math.random()*c.length|0]||[N-2,N-2]}
+function startLevel(){gen(Math.min(4+level*2,14));px=1.5;py=1.5;pa=map[1][2]?Math.PI/2:0;
+ex=N-2;ey=N-2;placeRooms();pd=bfs(1,1);mons=[];const n=Math.min(1+level,5);
+for(let i=0;i<n;i++){const[x,y]=farCell(pd,Math.min(10,pd[ey][ex]-2));mons.push({x:x+.5,y:y+.5,tx:x,ty:y,seen:false})}
+light=0;cd=0;jam=0;freeze=0;say('Этаж '+(4-level)+(level<3?'. Найди ключ от лестницы':'. Найди ключ от выхода на улицу'),4);state='play';ov.style.display='none';gp('start')}
+function say(t,s){msg=t;msgT=s||2.5}
+function showOv(t,x,b,n){try{document.exitPointerLock()}catch(e){}ov.style.display='flex';ov.querySelector('h1').textContent=t;ov.querySelectorAll('p').forEach((p,i)=>{p.style.display=i==0?'':'none';if(i==0)p.textContent=x});go.textContent=b;go._next=n}
+function end(t,x,b,n){state='over';gp('stop');beep(60,.8);showOv(t,x,b,n)}
+function pause(){state='pause';gp('stop');showOv('ПАУЗА','Нажми, чтобы вернуться в темноту.','Продолжить','resume')}
+function lock(){try{const r=cv.requestPointerLock();r&&r.catch&&r.catch(()=>{})}catch(e){}}
+const isTouch=()=>document.body.classList.contains('touch');
+function fmt(s){return String(s/60|0).padStart(2,'0')+':'+String(s%60|0).padStart(2,'0')}
+function die(t,x){let best=0,nb='';try{best=+localStorage.getItem('best')||0;if(playTime>best){localStorage.setItem('best',playTime);nb='\nНовый рекорд!'}else nb='\nЛучшее: '+fmt(best)}catch(e){}
+state='scare';scareT=1.6;scareWhy=[t,x+'\n\nТы прожил '+fmt(playTime)+nb,'Ещё раз','retry'];gp('stop');scream()}
+function scream(){try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();const t=ac.currentTime,nb=ac.createBuffer(1,ac.sampleRate*1.4,ac.sampleRate),d=nb.getChannelData(0);
+for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*(1-i/d.length);const n=ac.createBufferSource();n.buffer=nb;const v=ac.createGain();v.gain.value=.6;n.connect(v);v.connect(ac.destination);n.start();
+[420,437,95].forEach(f=>{const o=ac.createOscillator(),q=ac.createGain();o.type='sawtooth';o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f*2.3,t+1.2);q.gain.value=.18;o.connect(q);q.connect(ac.destination);o.start();o.stop(t+1.4)})}catch(e){}}
+function monster(sx,top,h,b,sw,seen,d){const c=n=>`rgb(${n*b|0},${(n-10)*b|0},${(n-22)*b|0})`,w=h*.16,bx=sx+sw,hx=bx+sw*.6,hy=top+h*.13;g.lineCap='round';
+if(b>.04){
+ g.strokeStyle=c(130);g.lineWidth=h*.035;g.beginPath();g.moveTo(bx-w*.3,top+h*.6);g.lineTo(sx-w*.55,top+h);g.moveTo(bx+w*.3,top+h*.6);g.lineTo(sx+w*.55,top+h);g.stroke();
+ g.fillStyle=c(110);g.beginPath();g.moveTo(bx-w*.75,top+h*.26);g.lineTo(bx+w*.75,top+h*.26);g.lineTo(bx+w*.3,top+h*.63);g.lineTo(bx-w*.3,top+h*.63);g.fill();
+ g.strokeStyle=c(40);g.lineWidth=Math.max(1,h*.012);
+ for(let i=0;i<5;i++){const y=top+h*(.3+i*.05),k=.6-i*.08;g.beginPath();g.moveTo(bx-w*k,y);g.lineTo(bx+w*k,y);g.stroke()}
+ g.strokeStyle=c(125);
+ for(const q of[-1,1]){g.lineWidth=h*.028;g.beginPath();g.moveTo(bx+q*w*.75,top+h*.28);g.lineTo(bx+q*w*1.6+sw,top+h*.62);g.lineTo(bx+q*w*1.3+sw*1.5,top+h*.97);g.stroke();
+  g.lineWidth=Math.max(1,h*.01);for(let k=-1;k<=1;k++){g.beginPath();g.moveTo(bx+q*w*1.3+sw*1.5,top+h*.97);g.lineTo(bx+q*w*1.3+sw*1.5+k*h*.035,top+h*1.04);g.stroke()}}
+ g.fillStyle=c(165);g.beginPath();g.ellipse(hx,hy,w*.5,h*.13,sw*.01,0,7);g.fill();
+ g.fillStyle='#000';for(const q of[-1,1]){g.beginPath();g.ellipse(hx+q*w*.2,hy-h*.02,w*.14,h*.04,q*.3,0,7);g.fill()}
+ g.fillStyle='#100';g.beginPath();g.ellipse(hx,hy+h*.075,w*.34,h*.03+h*.012*Math.sin(time*7),0,0,7);g.fill();
+ g.strokeStyle=c(235);g.lineWidth=Math.max(1,h*.006);for(let i=-4;i<=4;i++){g.beginPath();g.moveTo(hx+i*w*.07,hy+h*.05);g.lineTo(hx+i*w*.07,hy+h*.09);g.stroke()}}
+if(d<6&&(b>.04||seen||Math.sin(time*9+d)>-.3)){g.fillStyle=`rgba(255,20,0,${seen?1:.75})`;const r=Math.max(1,h*.014);for(const q of[-1,1]){g.beginPath();g.ellipse(hx+q*w*.2,hy-h*.02,r*1.6,r,0,0,7);g.fill()}}}
+function face(k){const cx=W/2+(Math.random()-.5)*16*k,cy=H/2+(Math.random()-.5)*12*k,r=H*.55*k,jaw=.04*r*Math.sin(time*40);
+g.fillStyle='#000';g.fillRect(0,0,W,H);g.fillStyle='#cfc8b8';g.beginPath();g.ellipse(cx,cy,r*.8,r,0,0,7);g.fill();
+g.fillStyle='#000';[-1,1].forEach(q=>{g.beginPath();g.ellipse(cx+q*r*.33,cy-r*.2,r*.2,r*.28,q*.3,0,7);g.fill()});
+g.fillStyle='#f00';[-1,1].forEach(q=>{g.beginPath();g.arc(cx+q*r*.33,cy-r*.17,r*.06,0,7);g.fill()});
+g.fillStyle='#200';g.beginPath();g.ellipse(cx,cy+r*.5+jaw,r*.45,r*.38+jaw,0,0,7);g.fill();
+g.fillStyle='#ddd';for(let i=-4;i<=4;i++){const x=cx+i*r*.09,l=r*(.12+.05*(i&1));
+g.beginPath();g.moveTo(x-r*.04,cy+r*.15);g.lineTo(x+r*.04,cy+r*.15);g.lineTo(x,cy+r*.15+l);g.fill();
+const y=cy+r*.85+jaw*2;g.beginPath();g.moveTo(x-r*.04,y);g.lineTo(x+r*.04,y);g.lineTo(x,y-l);g.fill()}}
+go.onclick=()=>{if(isTouch()){try{const e=document.documentElement;Promise.resolve((e.requestFullscreen||e.webkitRequestFullscreen).call(e)).then(()=>screen.orientation.lock('landscape')).catch(()=>{})}catch(x){}}else lock();if(go._next=='resume'){state='play';ov.style.display='none';gp('start');return}if(go._next=='retry'){level=1;playTime=0}if(go._next=='next')level++;startLevel()};
+// input
+const km={ArrowUp:'u',KeyW:'u',ArrowDown:'d',KeyS:'d',ArrowLeft:'l',ArrowRight:'r',KeyA:'sl',KeyD:'sr'};
+addEventListener('keydown',e=>{if(km[e.code])keys[km[e.code]]=1;if(e.code=='Space'){e.preventDefault();if(!e.repeat)flash()}});
+addEventListener('mousemove',e=>{if(state=='play'&&document.pointerLockElement)pa+=e.movementX*.0022});
+let lp={};cv.addEventListener('pointerdown',e=>{if(e.pointerType=='touch')lp[e.pointerId]=e.clientX});
+cv.addEventListener('pointermove',e=>{if(e.pointerType=='touch'&&lp[e.pointerId]!=null){if(state=='play')pa+=(e.clientX-lp[e.pointerId])*.008;lp[e.pointerId]=e.clientX}});
+['pointerup','pointercancel'].forEach(t=>cv.addEventListener(t,e=>delete lp[e.pointerId]));
+cv.addEventListener('mousedown',()=>{if(state!='play'||isTouch())return;if(!document.pointerLockElement)lock();else flash()});
+document.addEventListener('pointerlockchange',()=>{if(!document.pointerLockElement&&state=='play')pause()});
+addEventListener('keyup',e=>{if(km[e.code])keys[km[e.code]]=0});
+[['bl','sl'],['bf','u'],['br','sr'],['bd','d']].forEach(([id,k])=>{const b=document.getElementById(id);b.onpointerdown=()=>keys[k]=1;b.onpointerup=b.onpointerleave=b.onpointercancel=()=>keys[k]=0});
+document.getElementById('bs').onpointerdown=flash;
+function flash(){if(state!='play')return;
+if(jam>0){say('Лампа остывает...',1);return}
+if(cd>0){jam=4;cd=0;light=0;say('Не спамь! Лампа перегрелась!',3);beep(70,.4);return}
+light=1.5;cd=2.5;beep(900,.06,'square')}
+// projection
+function proj(m){const dx=m.x-px,dy=m.y-py,c=Math.cos(pa),s=Math.sin(pa),ty=c*dx+s*dy,tx=(c*dy-s*dx)/.66;return{ty,sx:W/2*(1+tx/ty),d:Math.hypot(dx,dy)}}
+function moving(){return keys.u||keys.d||keys.sl||keys.sr}
+function update(dt){time+=dt;playTime+=dt;if(msgT>0)msgT-=dt;
+if(light>0)light-=dt;if(cd>0)cd-=dt;if(jam>0)jam-=dt;
+if(freeze>0){freeze-=dt;if(grace>0)grace-=dt;
+ if(grace<=0&&moving()){die('ОНО ЗАМЕТИЛО ТЕБЯ','Ты пошевелился, когда монстр был рядом...','Ещё раз','retry');return}
+ if(freeze<=0){for(const m of mons)if(m.seen){m.seen=false;const[x,y]=farCell(pd,9);m.x=x+.5;m.y=y+.5;m.tx=x;m.ty=y;m.sleep=time+6}say('Оно ушло... пока.',2)}}
+else{const c=Math.cos(pa),s=Math.sin(pa),sp=1.8*dt;
+ if(keys.l)pa-=2*dt;if(keys.r)pa+=2*dt;let f=(keys.u?1:0)-(keys.d?.6:0),st=(keys.sr?.8:0)-(keys.sl?.8:0);
+ const dx=(c*f-s*st)*sp,dy=(s*f+c*st)*sp;
+ if(!map[py|0][(px+dx+Math.sign(dx)*.2)|0])px+=dx;if(!map[(py+dy+Math.sign(dy)*.2)|0][px|0])py+=dy;const ax=(px+Math.cos(pa)*.55)|0,ay=(py+Math.sin(pa)*.55)|0;if(keys.u&&map[ay][ax]==2){map[ay][ax]=0;beep(140,.35,'triangle')}}
+pd=bfs(px|0,py|0);
+if(freeze<=0&&moving())for(const m of mons){if(time<(m.sleep||0))continue;const dx=m.tx+.5-m.x,dy=m.ty+.5-m.y,d=Math.hypot(dx,dy),sp=(.7+.1*level)*dt;
+ if(d<=sp){m.x=m.tx+.5;m.y=m.ty+.5;let b=null,bd=1e9;for(const[a,q]of[[1,0],[-1,0],[0,1],[0,-1]]){const X=m.tx+a,Y=m.ty+q;if(!map[Y][X]&&pd[Y][X]>=0&&pd[Y][X]<bd){bd=pd[Y][X];b=[X,Y]}}if(b){m.tx=b[0];m.ty=b[1]}}
+ else{m.x+=dx/d*sp;m.y+=dy/d*sp}}
+const I=light>.9?1:Math.max(0,light/.9);
+if(I>.6&&freeze<=0)for(const m of mons){const p=proj(m);if(p.ty<.3||p.ty>9)continue;const col=p.sx|0;if(col<0||col>=W||zb[col]<p.ty-.2)continue;
+ m.seen=true;freeze=Math.random()<.5?.9+Math.random()*1.3:3.5+Math.random()*4;grace=.35;say('ОНО РЯДОМ. НЕ ДВИГАЙСЯ!',1.6);beep(110,.6)}
+for(const m of mons)if(moving()&&Math.hypot(m.x-px,m.y-py)<.55){die('ТЕБЯ СЪЕЛИ','Тьма забрала ещё одного...','Ещё раз','retry');return}
+if(!hasKey&&keyObj&&Math.hypot(keyObj.x-px,keyObj.y-py)<.6){hasKey=true;say(level==3?'Ключ от выхода на улицу!':'Ключ от лестницы!',3);beep(1300,.15,'sine')}
+if(Math.hypot(ex+.5-px,ey+.5-py)<.7){if(!hasKey)say(level==3?'Выход заперт. Нужен ключ.':'Дверь заперта. Нужен ключ.',1.5);else if(level<3){end('ЭТАЖ '+(4-level)+' ПРОЙДЕН','Ты спустился на этаж ниже...','Дальше','next');beep(500,.4,'sine')}else winGame()}}
+function winGame(){let best=0,nb='';try{best=+localStorage.getItem('bestwin')||0;if(!best||playTime<best){localStorage.setItem('bestwin',playTime);nb='\nНовый рекорд!'}else nb='\nЛучшее: '+fmt(best)}catch(e){}
+end('ТЫ СБЕЖАЛ','Ты выбрался из отеля.\n\nВремя: '+fmt(playTime)+nb,'Играть снова','retry')}
+function render(){const I=light>.9?1:Math.max(0,light/.9);
+g.fillStyle='#000';g.fillRect(0,0,W,H);
+const dx=Math.cos(pa),dy=Math.sin(pa),plx=-dy*.66,ply=dx*.66;
+for(let y=H/2|0;y<H;y++){const rd=H/2/(y-H/2+.5),att=1/(1+rd*rd*.3),fx0=px+rd*(dx-plx),fy0=py+rd*(dy-ply),stx=rd*2*plx/W,sty=rd*2*ply/W,a=y*W*4,b=(H-1-y)*W*4;
+ for(let x=0;x<W;x++){const fx=fx0+stx*x,fy=fy0+sty*x,L=Math.min(1,(I*(1-.45*Math.abs(2*x/W-1))+.03)*att);
+  const u=Math.abs(fx*2)%1,v=Math.abs(fy*2)%1,f=L*(((fx*2|0)+(fy*2|0))&1?1:.8)*(u<.05||v<.05?.4:1);
+  const cu=Math.abs(fx*1.2)%1,cw=Math.abs(fy*1.2)%1,k=L*(cu<.1?.35:cw<.04?.6:1);
+  let i=a+x*4;D[i]=95*f;D[i+1]=88*f;D[i+2]=80*f;D[i+3]=255;i=b+x*4;D[i]=70*k;D[i+1]=76*k;D[i+2]=84*k;D[i+3]=255}}
+g.putImageData(img,0,0);
+for(let i=0;i<W;i++){const cx=2*i/W-1,rx=dx+plx*cx,ry=dy+ply*cx;let mx=px|0,my=py|0;
+ const ddx=Math.abs(1/rx),ddy=Math.abs(1/ry);let sx,sy,sdx,sdy;
+ if(rx<0){sx=-1;sdx=(px-mx)*ddx}else{sx=1;sdx=(mx+1-px)*ddx}
+ if(ry<0){sy=-1;sdy=(py-my)*ddy}else{sy=1;sdy=(my+1-py)*ddy}
+ let side=0,n=0;while(n++<60){if(sdx<sdy){sdx+=ddx;mx+=sx;side=0}else{sdy+=ddy;my+=sy;side=1}if(I>.5&&(mx-px)*(mx-px)+(my-py)*(my-py)<49)lit[my*N+mx]=1;if(map[my][mx])break}
+ const d=Math.max(.05,side?sdy-ddy:sdx-ddx);zb[i]=d;
+ const L=(I*(1-.45*Math.abs(cx))+.03)/(1+d*d*.3),sh=Math.min(1,L)*(side?.7:1);
+ const h=H/d,y=(H-h)/2,wx=side?px+rx*d:py+ry*d,tex=.85+.15*Math.sin(wx*18),dr=map[my][mx]==2;
+ g.fillStyle=dr?`rgb(${125*sh*tex|0},${75*sh*tex|0},${40*sh*tex|0})`:`rgb(${120*sh*tex|0},${105*sh*tex|0},${95*sh*tex|0})`;g.fillRect(i,y,1,h);
+ if(dr){const f=wx%1;if(f>.78&&f<.86){g.fillStyle=`rgb(${240*sh|0},${200*sh|0},${60*sh|0})`;g.fillRect(i,H/2-h*.03,1,h*.06)}}}
+// exit glow & monsters
+const sp=[{ex:1,x:ex+.5,y:ey+.5},...mons];if(keyObj&&!hasKey)sp.push(keyObj);
+sp.map(m=>({m,p:proj(m)})).filter(o=>o.p.ty>.2).sort((a,b)=>b.p.ty-a.p.ty).forEach(({m,p})=>{
+ const h=H/p.ty,hw=h*(m.ex?.35:m.key?.15:.45),x0=Math.max(0,p.sx-hw|0),x1=Math.min(W-1,p.sx+hw|0);if(x1<x0)return;
+ g.save();g.beginPath();let run=-1,any=0;
+ for(let x=x0;x<=x1+1;x++){const v=x<=x1&&zb[x]>=p.ty;if(v&&run<0)run=x;if(!v&&run>=0){g.rect(run,0,x-run,H);run=-1;any=1}}
+ if(any){g.clip();
+  if(m.ex){const a=.35+.15*Math.sin(time*3);g.fillStyle=`rgba(${hasKey?'40,255,90':'255,50,40'},${a})`;g.beginPath();g.arc(p.sx,H/2,h*.3,0,7);g.fill()}
+  else if(m.key){const a=Math.min(1,I/(1+p.ty*p.ty*.1))+(p.d<3?.12+.1*Math.sin(time*6):0),r=h*.06,yy=H/2+h*.3;g.fillStyle=`rgba(255,210,60,${a})`;g.beginPath();g.arc(p.sx,yy,r,0,7);g.fill();g.fillRect(p.sx-r*.2,yy,r*.4,r*2.4);g.fillRect(p.sx,yy+r*1.4,r*.9,r*.4);g.fillRect(p.sx,yy+r*2,r*.7,r*.4)}
+  else{const b=Math.min(1,I/(1+p.ty*p.ty*.15)),ht=h*1.15,top=H/2+h/2-ht,sw=Math.sin(time*2+m.x*3)*h*.02;monster(p.sx,top,ht,b,sw,m.seen,p.d)}}
+ g.restore()});
+// danger vignette
+let nd=99;for(const m of mons)nd=Math.min(nd,Math.hypot(m.x-px,m.y-py));
+const dg=Math.max(0,1-nd/5),pulse=.5+.5*Math.sin(time*(4+dg*10));
+const vg=g.createRadialGradient(W/2,H/2,H*.25,W/2,H/2,W*.65);vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,`rgba(${dg*120|0},0,0,${.75+dg*.2*pulse})`);g.fillStyle=vg;g.fillRect(0,0,W,H);
+if(state=='menu')return;
+if(I>0&&state=='play')drawMap(I);
+// HUD
+g.fillStyle='#fff3';g.fillRect(10,H-18,100,8);
+const rdy=jam>0?0:cd>0?1-cd/2.5:1;g.fillStyle=jam>0?'#c00':rdy>=1?'#ee8':'#887';g.fillRect(10,H-18,100*(jam>0?jam/4:rdy),8);
+g.fillStyle='#aaa';g.font='11px Arial';g.fillText(jam>0?'ПЕРЕГРЕВ':'ЛАМПА',10,H-22);g.fillText('Этаж '+(4-level),W-70,14);g.fillText(fmt(playTime),W-70,28);g.fillText(hasKey?'🔑 ключ':'',W-70,42);
+if(msgT>0){g.globalAlpha=Math.min(1,msgT);g.font='bold 18px Arial';g.textAlign='center';g.fillStyle=freeze>0?'#f33':'#ddd';g.fillText(msg,W/2,40);g.textAlign='left';g.globalAlpha=1}}
+function drawMap(I){const R=7,s=7,x0=10,y0=10,cx=px|0,cy=py|0,S=(2*R+1)*s;g.globalAlpha=I*.85;g.fillStyle='#000';g.fillRect(x0-3,y0-3,S+6,S+6);
+for(let j=-R;j<=R;j++)for(let i=-R;i<=R;i++){const X=cx+i,Y=cy+j;if(X<0||Y<0||X>=N||Y>=N)continue;if(!lit[Y*N+X]&&!(X==cx&&Y==cy))continue;g.fillStyle=X==ex&&Y==ey?'#2f5':map[Y][X]==2?'#8a5a2a':map[Y][X]?'#6a6358':'#1d1a17';g.fillRect(x0+(i+R)*s,y0+(j+R)*s,s,s)}
+for(const m of mons)if(m.seen){g.fillStyle='#f22';g.beginPath();g.arc(x0+(m.x-cx+R)*s,y0+(m.y-cy+R)*s,3,0,7);g.fill()}
+const qx=x0+(px-cx+R)*s,qy=y0+(py-cy+R)*s;g.fillStyle='#fe6';g.beginPath();g.moveTo(qx+Math.cos(pa)*5,qy+Math.sin(pa)*5);g.lineTo(qx+Math.cos(pa+2.5)*4,qy+Math.sin(pa+2.5)*4);g.lineTo(qx+Math.cos(pa-2.5)*4,qy+Math.sin(pa-2.5)*4);g.fill();g.globalAlpha=1}
+function loop(t){const dt=Math.min(.05,(t-last)/1000||0);last=t;if(state!='play')time+=dt;
+if(state=='play'){if(!(isTouch()&&innerHeight>innerWidth))update(dt)}else if(state=='menu'){pa+=dt*.12;light-=dt;if(Math.random()<dt*.6)light=.9}
+render();
+if(state=='scare'){scareT-=dt;face(.3+Math.min(1,(1.6-scareT)/.18)*1.3);if(scareT>1.45&&Math.random()<.5){g.fillStyle='#fff';g.fillRect(0,0,W,H)}
+ g.fillStyle=`rgba(180,0,0,${.15+.2*Math.random()})`;g.fillRect(0,0,W,H);if(scareT<=0)end(...scareWhy)}
+requestAnimationFrame(loop)}
+if(isTouch()){const ps=ov.querySelectorAll('p');ps[ps.length-1].textContent='Кнопки слева — идти · Палец по экрану — смотреть · 💡 — вспышка'}
+const wn=document.getElementById('warn'),wd=()=>{wn.style.display='none'};wn.onclick=wd;
+addEventListener('keydown',e=>{if(wn.style.display!='none'&&(e.code=='Enter'||e.code=='Space'))wd()});
+gen(5);px=1.5;py=1.5;pa=map[1][2]?1.57:0;ex=N-2;ey=N-2;
+requestAnimationFrame(loop);
+</script></body></html>
