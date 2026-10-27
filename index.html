@@ -68,9 +68,9 @@ const[wallC,wx_]=mk(),[carC,cx_]=mk(),[woodC,wo_]=mk(),[ceilC,ce_]=mk();
 (()=>{let x=wx_;x.fillStyle='#5a3532';x.fillRect(0,0,64,64);
 for(let i=0;i<64;i+=16){x.fillStyle='#6d4040';x.fillRect(i+2,0,6,44);x.fillStyle='#4a2a28';x.fillRect(i+9,0,1,44);
  for(let j=4;j<44;j+=12){x.fillStyle='#8a5e4a';x.beginPath();x.moveTo(i+5,j);x.lineTo(i+8,j+3);x.lineTo(i+5,j+6);x.lineTo(i+2,j+3);x.fill()}}
-x.fillStyle='#c9a45c';x.fillRect(0,44,64,2);x.fillStyle='#3b2416';x.fillRect(0,46,64,18);
+x.fillStyle='#6e5430';x.fillRect(0,44,64,2);x.fillStyle='#3b2416';x.fillRect(0,46,64,18);
 for(let i=0;i<64;i+=16){x.fillStyle='#4f321f';x.fillRect(i+2,49,12,10);x.fillStyle='#24150b';x.fillRect(i+2,49,12,1)}
-x.fillStyle='#1d1109';x.fillRect(0,60,64,4);x.fillStyle='#7a5a3a';x.fillRect(0,0,64,2);noise(x,22);
+x.fillStyle='#1d1109';x.fillRect(0,60,64,4);x.fillStyle='#241414';x.fillRect(0,0,64,2);noise(x,22);
 for(let k=0;k<4;k++){x.fillStyle='rgba(0,0,0,.14)';x.beginPath();x.arc(Math.random()*64,Math.random()*40,6+Math.random()*8,0,7);x.fill()}
 x=cx_;x.fillStyle='#5c1717';x.fillRect(0,0,64,64);x.strokeStyle='#b08a40';x.lineWidth=1;
 for(let i=0;i<64;i+=32)for(let j=0;j<64;j+=32){x.beginPath();x.moveTo(i+16,j+2);x.lineTo(i+30,j+16);x.lineTo(i+16,j+30);x.lineTo(i+2,j+16);x.closePath();x.stroke();x.fillStyle='#8a2a2a';x.fillRect(i+14,j+14,4,4)}
@@ -215,7 +215,7 @@ function bfs(sx,sy){const d=Array.from({length:N},()=>Array(N).fill(-1));d[sy][s
 for(let i=0;i<q.length;i++){const[x,y]=q[i];for(const[a,b]of[[1,0],[-1,0],[0,1],[0,-1]]){const X=x+a,Y=y+b;if(!sol(X,Y)&&d[Y][X]<0){d[Y][X]=d[y][x]+1;q.push([X,Y])}}}return d}
 function farCell(d,min){const c=[];for(let y=0;y<N;y++)for(let x=0;x<N;x++)if(d[y][x]>=min)c.push([x,y]);return c[Math.random()*c.length|0]||[N-2,N-2]}
 function startLevel(){gen(Math.min(4+level*2,14));px=1.5;py=6.5;pa=0;
-ex=33;ey=32;pd=bfs(1,6);mons=[];const n=Math.min(1+level,5);
+ex=33;ey=32;pd=bfs(1,6);mons=[];const n=Math.min(level,4);
 for(let i=0;i<n;i++){const[x,y]=farCell(pd,10);mons.push({x:x+.5,y:y+.5,tx:x,ty:y,seen:false})}
 light=0;cd=0;jam=0;freeze=0;pitch=0;say('Этаж '+(4-level)+(level<3?'. Найди ключ от лестницы':'. Найди ключ от выхода на улицу'),4);state='play';ov.style.display='none';gp('start')}
 function say(t,s){msg=t;msgT=s||2.5}
@@ -347,16 +347,27 @@ let nd=99;for(const m of mons)nd=Math.min(nd,Math.hypot(m.x-px,m.y-py));
 const dg=Math.max(0,1-nd/5),pulse=.5+.5*Math.sin(time*(4+dg*10));
 const vg=g.createRadialGradient(W/2,H/2,H*.25,W/2,H/2,W*.65);vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,`rgba(${dg*120|0},0,0,${.75+dg*.2*pulse})`);g.fillStyle=vg;g.fillRect(0,0,W,H);
 if(state=='menu')return;
-if(I>0&&state=='play')drawMap(I);
+if(state=='play'){radar(I);if(I>0)drawMap(I)}
 // HUD
 g.fillStyle='#fff3';g.fillRect(10,H-18,100,8);
 const rdy=jam>0?0:cd>0?1-cd/2.5:1;g.fillStyle=jam>0?'#c00':rdy>=1?'#ee8':'#887';g.fillRect(10,H-18,100*(jam>0?jam/4:rdy),8);
 g.fillStyle='#aaa';g.font='11px Arial';g.fillText(jam>0?'ПЕРЕГРЕВ':'ЛАМПА',10,H-22);g.fillText('Этаж '+(4-level),W-70,14);g.fillText(fmt(playTime),W-70,28);g.fillText(hasKey?'🔑 ключ':'',W-70,42);
 if(msgT>0){g.globalAlpha=Math.min(1,msgT);g.font='bold 18px Arial';g.textAlign='center';g.fillStyle=freeze>0?'#f33':'#ddd';g.fillText(msg,W/2,40);g.textAlign='left';g.globalAlpha=1}}
-function drawMap(I){const R=7,s=7,x0=10,y0=10,cx=px|0,cy=py|0,S=(2*R+1)*s;g.globalAlpha=I*.85;g.fillStyle='#000';g.fillRect(x0-3,y0-3,S+6,S+6);
+let prevSw=0;
+function radar(I){const R=7,TAU=Math.PI*2,sw=(time*1.7)%TAU,d0=((sw-prevSw)%TAU+TAU)%TAU;
+for(const m of mons){const dx=m.x-px,dy=m.y-py,dist=Math.hypot(dx,dy);if(dist>R+.4)continue;const an=((Math.atan2(dy,dx)%TAU)+TAU)%TAU,dd=((an-prevSw)%TAU+TAU)%TAU;if(d0<1&&dd<=d0){m.ping=time;m.bx=m.x;m.by=m.y;if(I>0&&dist<5)beep(1100,.05,'sine')}}prevSw=sw}
+function drawMap(I){const R=7,s=7,x0=10,y0=10,cx=px|0,cy=py|0,S2=(2*R+1)*s,pcx=x0+(px-cx+R)*s,pcy=y0+(py-cy+R)*s,TAU=Math.PI*2;
+const A=I*.85;g.globalAlpha=A*.8;g.fillStyle='#000';g.fillRect(x0-3,y0-3,S2+6,S2+6);g.globalAlpha=A;
 for(let j=-R;j<=R;j++)for(let i=-R;i<=R;i++){const X=cx+i,Y=cy+j;if(X<0||Y<0||X>=N||Y>=N)continue;if(!lit[Y*N+X]&&!(X==cx&&Y==cy))continue;g.fillStyle=X==ex&&Y==ey?'#2f5':sol(X,Y)?(map[Y][X]==2?'#8a5a2a':'#6a6358'):'#1d1a17';g.fillRect(x0+(i+R)*s,y0+(j+R)*s,s,s)}
-for(const m of mons)if(m.seen){g.fillStyle='#f22';g.beginPath();g.arc(x0+(m.x-cx+R)*s,y0+(m.y-cy+R)*s,3,0,7);g.fill()}
-const qx=x0+(px-cx+R)*s,qy=y0+(py-cy+R)*s;g.fillStyle='#fe6';g.beginPath();g.moveTo(qx+Math.cos(pa)*5,qy+Math.sin(pa)*5);g.lineTo(qx+Math.cos(pa+2.5)*4,qy+Math.sin(pa+2.5)*4);g.lineTo(qx+Math.cos(pa-2.5)*4,qy+Math.sin(pa-2.5)*4);g.fill();g.globalAlpha=1}
+g.save();g.beginPath();g.rect(x0,y0,S2,S2);g.clip();
+g.globalAlpha=A;g.strokeStyle='rgba(70,255,130,.3)';g.lineWidth=1;for(const r of[R*s*.5,R*s]){g.beginPath();g.arc(pcx,pcy,r,0,7);g.stroke()}
+g.beginPath();g.moveTo(pcx-R*s,pcy);g.lineTo(pcx+R*s,pcy);g.moveTo(pcx,pcy-R*s);g.lineTo(pcx,pcy+R*s);g.stroke();
+const sw=(time*1.7)%TAU;for(let k=0;k<12;k++){const a=sw-k*.07;g.strokeStyle=`rgba(80,255,140,${.45*(1-k/12)})`;g.beginPath();g.moveTo(pcx,pcy);g.lineTo(pcx+Math.cos(a)*R*s*1.2,pcy+Math.sin(a)*R*s*1.2);g.stroke()}
+for(const m of mons){if(m.ping==null)continue;const age=time-m.ping;if(age>2.6)continue;const al=1-age/2.6,bx_=x0+(m.bx-cx+R)*s,by_=y0+(m.by-cy+R)*s;
+ g.fillStyle=`rgba(255,40,40,${al})`;g.beginPath();g.arc(bx_,by_,3.2,0,7);g.fill();g.strokeStyle=`rgba(255,90,90,${al*.6})`;g.beginPath();g.arc(bx_,by_,3+age*6,0,7);g.stroke()}
+for(const m of mons)if(m.seen){g.fillStyle='#f22';g.beginPath();g.arc(x0+(m.x-cx+R)*s,y0+(m.y-cy+R)*s,3.5,0,7);g.fill()}
+g.restore();
+const qx=pcx,qy=pcy;g.globalAlpha=A;g.fillStyle='#fe6';g.beginPath();g.moveTo(qx+Math.cos(pa)*5,qy+Math.sin(pa)*5);g.lineTo(qx+Math.cos(pa+2.5)*4,qy+Math.sin(pa+2.5)*4);g.lineTo(qx+Math.cos(pa-2.5)*4,qy+Math.sin(pa-2.5)*4);g.fill();g.globalAlpha=1}
 function loop(t){const dt=Math.min(.05,(t-last)/1000||0);last=t;if(state!='play')time+=dt;
 if(state=='play'){if(!(isTouch()&&innerHeight>innerWidth))update(dt)}else if(state=='menu'){pa+=dt*.12;light-=dt;if(Math.random()<dt*.6)light=.9}
 render();
